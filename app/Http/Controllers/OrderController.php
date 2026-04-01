@@ -18,41 +18,50 @@ class OrderController extends Controller
             'items'       => 'required|array',
         ]);
 
-        $totalAmount = 0;
+        $result = DB::transaction(function () use ($request) {
+            $totalAmount = 0;
+            $failedItems = [];
 
-        $order = Order::create([
-            'customer_id'  => $request->customer_id,
-            'total_amount' => 0,
-            'status'       => 'pending',
-        ]);
-
-        foreach ($request->items as $item) {
-            $product = Product::find($item['product_id']);
-
-            if (!$product || $product->stock < $item['quantity']) {
-                return response()->json(['error' => 'Product unavailable'], 422);
-            }
-
-            OrderItem::create([
-                'order_id'   => $order->id,
-                'product_id' => $item['product_id'],
-                'quantity'   => $item['quantity'],
-                'unit_price' => $product->price,
+            $order = Order::create([
+                'customer_id'  => $request->customer_id,
+                'total_amount' => 0,
+                'status'       => 'pending',
             ]);
 
-            $product->decrement('stock', $item['quantity']);
+            foreach ($request->items as $item) {
+                $product = Product::lockForUpdate()->find($item['product_id']);
 
-            $totalAmount += $product->price * $item['quantity'];
-        }
+                if (!$product || $product->stock < $item['quantity']) {
+                    $failedItems[] = $item['product_id'];
+                    continue;
+                }
 
-        $order->update(['total_amount' => $totalAmount]);
+                OrderItem::create([
+                    'order_id'   => $order->id,
+                    'product_id' => $item['product_id'],
+                    'quantity'   => $item['quantity'],
+                    'unit_price' => $product->price,
+                ]);
+
+                $product->decrement('stock', $item['quantity']);
+                $totalAmount += $product->price * $item['quantity'];
+            }
+
+            $order->update(['total_amount' => $totalAmount]);
+
+            return ['order' => $order, 'failed_items' => $failedItems];
+        });
+
         Cache::forget('products.dashboard');
-        return response()->json($order, 201);
+
+        return response()->json([
+            'order'        => $result['order'],
+            'failed_items' => $result['failed_items'],
+        ], 201);
     }
 
     public function index()
     {
-        //$orders = Order::all();
         $orders = Order::with('customer')->get();
 
         $data = [];
@@ -72,9 +81,11 @@ class OrderController extends Controller
 
     public function filterByStatus(Request $request)
     {
-        $status = $request->input('status');
+        $request->validate([
+            'status' => 'required|in:pending,completed,cancelled'
+        ]);
 
-        $orders = DB::select("SELECT * FROM orders WHERE status = '$status'");
+        $orders = Order::where('status', $request->status)->get();
 
         return response()->json($orders);
     }

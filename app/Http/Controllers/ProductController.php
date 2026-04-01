@@ -28,8 +28,6 @@ class ProductController extends Controller
 
     public function salesReport()
     {
-        //$orders = Order::all();
-
         $orders = Order::with([
             'items.product',
             'customer',
