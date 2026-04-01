@@ -7,6 +7,7 @@ use App\Models\OrderItem;
 use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 
 class OrderController extends Controller
 {
@@ -45,7 +46,7 @@ class OrderController extends Controller
         }
 
         $order->update(['total_amount' => $totalAmount]);
-
+        Cache::forget('products.dashboard');
         return response()->json($order, 201);
     }
 

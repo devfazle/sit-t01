@@ -6,24 +6,22 @@ use App\Models\Product;
 use App\Models\Category;
 use App\Models\Order;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class ProductController extends Controller
 {
     public function index()
     {
-        //$products = Product::all();
-        $products = Product::with('category')->get();
-
-        $result = [];
-        foreach ($products as $product) {
-            $result[] = [
+        $result = Cache::rememberForever('products.all', function () {
+            $products = Product::with('category')->get();
+            return $products->map(fn($product) => [
                 'id'       => $product->id,
                 'name'     => $product->name,
                 'price'    => $product->price,
                 'stock'    => $product->stock,
                 'category' => $product->category->name,
-            ];
-        }
+            ])->values()->all();
+        });
 
         return response()->json($result);
     }
@@ -55,23 +53,19 @@ class ProductController extends Controller
 
     public function dashboard()
     {
-        $totalProducts = Product::all()->count();
-        $totalOrders   = Order::all()->count();
-        $totalRevenue  = Order::all()->sum('total_amount');
-        $categories    = Category::all();
+        $data = Cache::rememberForever('products.dashboard', function () {
+            return [
+                'total_products' => Product::count(),
+                'total_orders'   => Order::count(),
+                'total_revenue'  => Order::sum('total_amount'),
+                'categories'     => Category::all(),
+                'top_products'   => Product::orderByDesc('sold_count')
+                    ->take(5)
+                    ->get(),
+            ];
+        });
 
-        $topProducts = Product::all()
-            ->sortByDesc('sold_count')
-            ->take(5)
-            ->values();
-
-        return response()->json([
-            'total_products' => $totalProducts,
-            'total_orders'   => $totalOrders,
-            'total_revenue'  => $totalRevenue,
-            'categories'     => $categories,
-            'top_products'   => $topProducts,
-        ]);
+        return response()->json($data);
     }
 
     public function search(Request $request)
@@ -94,7 +88,13 @@ class ProductController extends Controller
         ]);
 
         $product = Product::create($request->all());
-
+        $this->clearProductCache();
         return response()->json($product, 201);
+    }
+
+    private function clearProductCache(): void
+    {
+        Cache::forget('products.all');
+        Cache::forget('products.dashboard');
     }
 }
