@@ -11,7 +11,8 @@ class ProductController extends Controller
 {
     public function index()
     {
-        $products = Product::all();
+        //$products = Product::all();
+        $products = Product::with('category')->get();
 
         $result = [];
         foreach ($products as $product) {
@@ -29,7 +30,12 @@ class ProductController extends Controller
 
     public function salesReport()
     {
-        $orders = Order::all();
+        //$orders = Order::all();
+
+        $orders = Order::with([
+            'items.product',
+            'customer',
+        ])->get();
 
         $report = [];
         foreach ($orders as $order) {
@@ -72,8 +78,8 @@ class ProductController extends Controller
     {
         $keyword  = $request->input('q');
         $products = Product::where('name', 'LIKE', '%' . $keyword . '%')
-                           ->orWhere('description', 'LIKE', '%' . $keyword . '%')
-                           ->get();
+            ->orWhere('description', 'LIKE', '%' . $keyword . '%')
+            ->get();
 
         return response()->json($products);
     }
